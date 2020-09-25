@@ -17,7 +17,7 @@ class StockData:
     @classmethod
     def update_stock_list(cls):
         """
-        creon 서버에서 종목정보 가져와 db에 업데이트
+        creon 서버에서 종목정보 가져와 db에  업데이트
         """
 
         # 종목 데이터 db 컬럼
