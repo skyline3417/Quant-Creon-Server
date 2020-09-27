@@ -440,7 +440,7 @@ class BalanceData:
 
             able_sell_qty (int): 매도 가능 수량
 
-            avg_price (int): 평균 단가f
+            avg_price (int): 평균 단가
         """
         # 해당 종목의 잔고가 0일 경우 잔고 테이블에서 종목 삭제 후 리턴
         if balance_qty == 0:
@@ -482,6 +482,12 @@ class BalanceData:
     @classmethod
     def update_current_price(cls, stock_code, cur_price):
         """
+        계좌 잔고에 stock_code 종목의 현재가, 손익, 수익률, 평가금액 업데이트
+
+        Parameters:
+            stock_code (str): 종목 코드
+            
+            cur_price (int): 종목의 현재가
         """
         data_db = cls.db_kr_operation_data.select("KR_Stock_Balance", ["profit_unit_price", "quantity"], "stock_code = '" + stock_code + "'")
         if not data_db:
