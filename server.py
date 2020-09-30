@@ -7,7 +7,7 @@ import json
 import stock_data
 import trade
 import database
-from stock_data_realtime import StockTickData, StockDataRt
+from stock_data_realtime import StockTickData, StockTickRt
 from trade_status_realtime import TradeStatusRt
 from trade_info_enum import *
 
@@ -17,43 +17,25 @@ PORT = 30565
 
 class QuantServer:
     def __init__(self):
-        self.stock_data_rt = {}
-        self.trade_status_rt = None
-
-        self.stock_data_rt_sub_q = Queue()
-        self.order_q = Queue()
-
-        self.conn_client_dict = {}
-        self.conn_client_lock = threading.Lock()
-        self.recv_q = None
+        self.client_conn_dict = {}
+        self.task_list = {"order": TaskOrder(self), "stock_tick_rt_sub": TaskStockTickRt(self), "trade_status_rt_sub": TaskTradeStatusRt(self)}
 
     def start_server(self):
         trade.BalanceData.update_stock_balance()
         trade.TradeData.update_unconcluded_order()
-        self.trade_status_rt = TradeStatusRt(self.trade_status_rt_event)
-        self.trade_status_rt.subscribe()
-
-        execute_order_thread = threading.Thread(target=self.execute_order, args=(self.order_q,))
-        stock_data_rt_sub_thread = threading.Thread(target=self.excute_stock_data_rt_sub, args=(self.stock_data_rt_sub_q,))
-        execute_recv_req_thread = threading.Thread(target=self.execute_recv_req)
-
-        execute_order_thread.start()
-        stock_data_rt_sub_thread.start()
-        execute_recv_req_thread.start()
 
         db_kr_operation_data = database.MariaDB("KR_OPERATION_DATA")
         balance_stock_code_list = db_kr_operation_data.select("KR_Stock_Balance", "stock_code")
-
         if balance_stock_code_list:
             if not isinstance(balance_stock_code_list, list):
                 balance_stock_code_list = [balance_stock_code_list]
-
             req = {"username": "system", "req_type": "stock_data_rt", "req_data": {"set_status": True, "stock_code_list": balance_stock_code_list}}
-            self.stock_data_rt_sub_q.put(req)
+            self.task_list["stock_tick_rt_sub"].insert_q(req)
 
-        self.start_socket()
+        task_socket_thread = threading.Thread(target=self.task_socket, daemon=True)
+        task_socket_thread.start()
 
-    def start_socket(self):
+    def task_socket(self):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.bind((HOST, PORT))
         server_socket.listen(5)
@@ -61,120 +43,153 @@ class QuantServer:
         while True:
             print("Waiting on port : %d" % PORT)
 
-            conn_socket, addr = server_socket.accept()
+            socket_conn, addr = server_socket.accept()
 
-            login_thread = threading.Thread(target=self.login, args=(conn_socket,))
+            login_thread = threading.Thread(target=self.login, args=(socket_conn,))
             login_thread.start()
 
-    def login(self, conn_socket):
-        recv_data = conn_socket.recv()
+    def login(self, socket_conn):
+
+        try:
+            recv_data = socket_conn.recv(1024)
+        except:
+            return
 
         username = json.loads(recv_data.decode("utf-8"))["username"]
         password = json.loads(recv_data.decode("utf-8"))["password"]
 
         db_mysql = database.MariaDB("mysql")
 
-        if username in self.conn_client_dict:
-            close_socket(username)
+        if username in self.client_conn_dict:
+            self.client_conn_dict[username].close_client()
 
         if password == db_mysql.select("user", "Password", "User = '" + username + "'"):
-            conn_socket.send("SUCCESS".encode("utf-8"))
-
-            self.conn_client_dict[login_data[username]]["conn_socket"] = conn_socket
-            self.conn_client_dict[login_data[username]]["send_q"] = Queue()
-
-            socket_send_thread = threading.Thread(target=self.socket_send, args=(username,))
-            socket_recv_thread = threading.Thread(target=self.socket_recv, args=(username,))
-
-            socket_send_thread.start()
-            socket_recv_thread.start()
+            socket_conn.send("SUCCESS".encode("utf-8"))
+            print("login success : ", username)
+            self.client_conn_dict[username] = ClientConn(username, socket_conn, self)
 
         else:
-            conn_socket.send("FAIL".encode("utf-8"))
-            conn_socket.close()
+            print("login failed")
+            socket_conn.send("FAIL".encode("utf-8"))
+            socket_conn.close()
 
-    def socket_send(self, username):
+    def insert_send_q(self, username, data):
+        if username in self.client_conn_dict:
+            self.client_conn_dict[username].insert_send_q(data)
+
+    def delete_client(self, username):
+        self.task_list["stock_tick_rt_sub"].delete_user(username)
+        # self.task_list["stock_askbid_rt_sub"].delete_user(username)
+        self.task_list["trade_status_rt_sub"].delete_user(username)
+        del self.client_conn_dict[username]
+
+
+class ClientConn:
+    def __init__(self, username, socket_conn, caller):
+        self.username = username
+        self.socket_conn = socket_conn
+        self.send_q = Queue()
+        self.recv_q = Queue()
+
+        self.caller = caller
+
+        socket_send_thread = threading.Thread(target=self.socket_send, daemon=True)
+        socket_recv_thread = threading.Thread(target=self.socket_recv, daemon=True)
+
+        socket_send_thread.start()
+        socket_recv_thread.start()
+
+    def socket_send(self):
         while True:
             try:
-                send_data = self.conn_client_dict[username]["send_q"].get()
+                send_data = self.send_q.get()
 
                 if send_data == "CLOSE":
                     break
 
-                self.conn_client_dict[username]["conn_socket"].sendall(send_data.encode("utf-8"))
+                self.socket_conn.sendall(send_data.encode("utf-8"))
             except:
                 break
 
             time.sleep(0.001)
+        print("send end")
 
-    def socket_recv(self, username):
+    def insert_send_q(self, data):
+        self.send_q.put(data)
+
+    def socket_recv(self):
+        execute_recv_req_thread = threading.Thread(target=self.execute_recv_req, daemon=True)
+        execute_recv_req_thread.start()
+
         while True:
             try:
-                recv_data = self.conn_client_dict[username]["conn_socket"].recv(1024).decode("utf-8")
+                recv_data = self.socket_conn.recv(1024).decode("utf-8")
             except:
-                self.close_socket(username)
+                self.close_client()
                 break
+
+            if recv_data == "CLOSE" or recv_data == "":
+                self.close_client()
+                break
+
+            self.recv_q.put(recv_data)
+
+    def execute_recv_req(self):
+        while True:
+            recv_data = self.recv_q.get()
 
             if recv_data == "CLOSE":
-                self.close_socket(username)
                 break
 
-            self.recv_q.put((username, recv_data,))
+            req = json.loads(recv_data)
+            req["username"] = self.username
+            print(req)
+            self.caller.task_list[req["req_type"]].insert_q(req)
+        print("execute end")
 
-    def close_socket(self, username):
-        self.conn_client_lock.acquire()
+    def close_client(self):
+        self.socket_conn.close()
+        self.insert_send_q("CLOSE")
+        self.recv_q.put("CLOSE")
 
-        if not username in self.conn_client_dict:
-            self.conn_client_lock.release()
-            return
+        self.caller.delete_client(self.username)
 
-        self.conn_client_dict[username]["conn_socket"].close()
-        self.conn_client_dict[username]["send_q"].put("CLOSE")
 
-        req = {
-            "username": username,
-            "req_type": "stock_data_rt",
-            "req_data": {"set_status": False, "stock_code_list": "ALL"},
-        }
-        self.stock_data_rt_req_q.put(req)
+class TaskTradeStatusRt(threading.Thread):
+    def __init__(self, caller):
+        threading.Thread.__init__(self)
 
-        del self.conn_client_dict[username]
+        self.caller = caller
 
-        self.conn_client_lock.release()
+        self.subscribe_req_q = Queue()
+        self.sub_status_dict = {}
 
-    def insert_send_q(self, username, data):
-        self.conn_client_lock.acquire()
+        self.setDaemon(True)
+        self.start()
 
-        if username in self.conn_client_dict:
-            self.conn_client_dict[username]["send_q"].put(data)
+    def run(self):
+        while True:
+            req = self.subscribe_req_q.get()
 
-        self.conn_client_lock.release()
+            username = req["username"]
+            sub_req = req["req_data"]
 
-    def stock_data_rt_event(self, stock_tick_data):
-        data_json = {
-            "res_type": "trade_status_rt",
-            "res_data": {
-                "stock_code": stock_tick_data.stock_code,
-                "date_time": stock_tick_data.date_time,
-                "single_price_flag": stock_tick_data.single_price_flag.name,
-                "price": stock_tick_data.price,
-                "day_changed": stock_tick_data.day_changed,
-                "qty": stock_tick_data.qty,
-                "vol": stock_tick_data.vol,
-            },
-        }
-        if stock_tick_data.stock_code in self.stock_data_rt:
-            for username in self.stock_data_rt[stock_tick_data.stock_code]["requester"]:
-                self.insert_send_q(username, json.dumps(data_json))
+            if sub_req["set_status"]:
+                if not username in self.sub_status_dict:
+                    self.sub_status_dict[username] = TradeStatusRt(self.event)
+            else:
+                if username in self.sub_status_dict:
+                    self.sub_status_dict[username].unsubscribe()
+                    del self.sub_status_dict[username]
 
-    def trade_status_rt_event(self, trade_info):
+    def event(self, trade_info):
         if trade_info.e_conclusion_type == CONCLUSION_TYPE.CONCLUDED:
             req = {
                 "username": "system",
                 "req_type": "stock_data_rt",
                 "req_data": {"set_status": bool(trade_info.balance_qty), "stock_code_list": [trade_info.stock_code]},
             }
-            self.stock_data_rt_sub_q.put(req)
+            self.caller.task_list["stock_tick_rt_sub"].insert_q(req)
 
         data_json = {
             "res_type": "trade_status",
@@ -198,63 +213,133 @@ class QuantServer:
             },
         }
 
-        for username in self.conn_client_dict.keys():
-            self.insert_send_q(username, json.dumps(data_json))
+        for username in self.sub_status_dict.keys():
+            self.caller.insert_send_q(username, json.dumps(data_json))
 
-    def execute_recv_req(self):
+    def delete_user(self, username):
+        if username in self.sub_status_dict:
+            self.sub_status_dict[username].unsubscribe()
+            del self.sub_status_dict[username]
+
+
+class TaskStockDataRt(threading.Thread):
+    def __init__(self, rt_class, caller):
+        threading.Thread.__init__(self)
+        self.rt_class = rt_class
+        self.caller = caller
+
+        self.subscribe_req_q = Queue()
+        self.sub_status_dict = {}
+
+        self.setDaemon(True)
+        self.start()
+
+    def run(self):
         while True:
-            username, recv_data = self.recv_q.get()
-
-            req = json.loads(recv_data)
-            req["username"] = username
-
-            if req["req_type"] == "order":
-                order_q.put(req)
-            elif req["req_type"] == "stock_data_rt":
-                stock_data_rt_sub_q.put(req)
-
-    def excute_stock_data_rt_sub(self, stock_data_rt_req_q):
-        while True:
-            req = stock_data_rt_req_q.get()
+            req = self.subscribe_req_q.get()
 
             username = req["username"]
+            sub_req = req["req_data"]
 
-            if req["req_data"]["stock_code_list"] == "ALL":
-                for stock_code in self.stock_data_rt.keys():
-                    if username in self.stock_data_rt[stock_code]["requester"]:
-                        self.stock_data_rt[stock_code]["requester"].remove(username)
+            if sub_req["set_status"]:
+                for stock_code in sub_req["stock_code_list"]:
+                    if not stock_code in self.sub_status_dict:
+                        self.sub_status_dict[stock_code] = {}
+                        self.sub_status_dict[stock_code]["ins"] = self.rt_class(stock_code, self.event)
+                        self.sub_status_dict[stock_code]["user_list"] = []
 
-                    if not self.stock_data_rt[stock_code]["requester"]:
-                        self.stock_data_rt[stock_code]["ins"].unsubscribe()
-                        del stock_data_rt[stock_code]
+                    if not username in self.sub_status_dict[stock_code]["user_list"]:
+                        self.sub_status_dict[stock_code]["user_list"].append(username)
             else:
-                for stock_code in req["req_data"]["stock_code_list"]:
-                    if req["req_data"]["set_status"]:
-                        if not stock_code in self.stock_data_rt:
-                            self.stock_data_rt[stock_code] = {"ins": StockDataRt(stock_code, self.stock_data_rt_event)}
-                            self.stock_data_rt[stock_code]["requester"] = []
+                for stock_code in sub_req["stock_code_list"]:
+                    if stock_code in self.sub_status_dict:
+                        if username in self.sub_status_dict[stock_code]["user_list"]:
+                            self.sub_status_dict[stock_code]["user_list"].remove(username)
 
-                        if not username in self.stock_data_rt[stock_code]["requester"]:
-                            self.stock_data_rt[stock_code]["requester"].append(username)
-                    else:
-                        if username in self.stock_data_rt[stock_code]["requester"]:
-                            self.stock_data_rt[stock_code]["requester"].remove(username)
+                        if not self.sub_status_dict[stock_code]["user_list"]:
+                            self.sub_status_dict[stock_code]["ins"].unsubscribe()
+                            del self.sub_status_dict[stock_code]
+            print(self.sub_status_dict)
 
-                        if not self.stock_data_rt[stock_code]["requester"]:
-                            self.stock_data_rt[stock_code]["ins"].unsubscribe()
-                            del stock_data_rt[stock_code]
+    def insert_q(self, data):
+        self.subscribe_req_q.put(data)
 
-            json_dict = {"res_type": "stock_data_rt", "res_data": req["req_data"]}
-            self.insert_send_q(username, json.dumps(json_dict))
+    def event(self):
+        pass
 
-    def execute_order(self, order_q):
+    def delete_user(self, username):
+        for stock_code in self.sub_status_dict.keys():
+            if username in self.sub_status_dict[stock_code]["user_list"]:
+                self.sub_status_dict[stock_code]["user_list"].remove(username)
+
+            if not self.sub_status_dict[stock_code]["user_list"]:
+                self.sub_status_dict[stock_code]["ins"].unsubscribe()
+                del self.sub_status_dict[stock_code]
+
+
+class TaskStockTickRt(TaskStockDataRt):
+    def __init__(self, caller):
+        TaskStockDataRt.__init__(self, StockTickRt, caller)
+
+    def event(self, stock_tick_data):
+        data_json = {
+            "res_type": "trade_status_rt",
+            "res_data": {
+                "stock_code": stock_tick_data.stock_code,
+                "date_time": stock_tick_data.date_time,
+                "single_price_flag": stock_tick_data.single_price_flag.name,
+                "price": stock_tick_data.price,
+                "day_changed": stock_tick_data.day_changed,
+                "qty": stock_tick_data.qty,
+                "vol": stock_tick_data.vol,
+            },
+        }
+        if stock_tick_data.stock_code in self.sub_status_dict:
+            for username in self.sub_status_dict[stock_tick_data.stock_code]["user_list"]:
+                self.caller.insert_send_q(username, json.dumps(data_json))
+
+
+"""
+class TaskStockAskBidRt(TaskStockDataRt):
+    def __init__(self, caller):
+        TaskStockDataRt.__init__(self, StockAskBidRt, caller)
+
+    def event(self, stock_tick_data):
+        data_json = {
+            "res_type": "trade_status_rt",
+            "res_data": {
+                "stock_code": stock_tick_data.stock_code,
+                "date_time": stock_tick_data.date_time,
+                "single_price_flag": stock_tick_data.single_price_flag.name,
+                "price": stock_tick_data.price,
+                "day_changed": stock_tick_data.day_changed,
+                "qty": stock_tick_data.qty,
+                "vol": stock_tick_data.vol,
+            },
+        }
+        if stock_tick_data.stock_code in self.sub_status_dict:
+            for username in self.sub_status_dict[stock_tick_data.stock_code]["user_list"]:
+                self.caller.insert_send_q(username, json.dumps(data_json))
+"""
+
+
+class TaskOrder(threading.Thread):
+    def __init__(self, caller):
+        threading.Thread.__init__(self)
+        self.order_q = Queue()
+        self.caller = caller
+
+        self.setDaemon(True)
+        self.start()
+
+    def run(self):
         while True:
-            req = order_q.get()
+            req = self.order_q.get()
 
             username = req["username"]
             order_info = req["req_data"]
 
-            if order_info["order_data"] == "buy":
+            if order_info["order_type"] == "buy":
                 order_num = trade.Order.buy(
                     order_info["stock_code"],
                     order_info["qty"],
@@ -262,7 +347,7 @@ class QuantServer:
                     PRICE_TYPE[order_info["e_price_type"]],
                     order_info["price"],
                 )
-            elif order_info["order_data"] == "sell":
+            elif order_info["order_type"] == "sell":
                 order_num = trade.Order.sell(
                     order_info["stock_code"],
                     order_info["qty"],
@@ -270,7 +355,7 @@ class QuantServer:
                     PRICE_TYPE[order_info["e_price_type"]],
                     order_info["price"],
                 )
-            elif order_info["order_data"] == "modify_type":
+            elif order_info["order_type"] == "modify_type":
                 order_num = trade.Order.modify_type(
                     order_info["origin_order_num"],
                     order_info["stock_code"],
@@ -279,13 +364,16 @@ class QuantServer:
                     PRICE_TYPE[order_info["e_price_type"]],
                     order_info["price"],
                 )
-            elif order_info["order_data"] == "modify_price":
+            elif order_info["order_type"] == "modify_price":
                 order_num = trade.Order.modify_price(order_info["origin_order_num"], order_info["stock_code"], order_info["qty"], order_info["price"])
-            elif order_info["order_data"] == "cancel":
+            elif order_info["order_type"] == "cancel":
                 order_num = trade.Order.cancel(order_info["origin_order_num"], order_info["stock_code"], order_info["qty"])
 
             json_dict = {"res_type": "order", "res_data": {"order_num": order_num}}
-            self.insert_send_q(username, json.dumps(json_dict))
+            self.caller.insert_send_q(username, json.dumps(json_dict))
+
+    def insert_q(self, data):
+        self.order_q.put(data)
 
 
 def main():

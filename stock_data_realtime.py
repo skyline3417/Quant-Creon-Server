@@ -48,9 +48,9 @@ class StockTickData:
     vol: int
 
 
-class StockDataRt:
+class StockTickRt:
     """
-    실시간 주식 데이터 관련 클래스
+    실시간 주식 틱데이터 관련 클래스
 
     Attributes:
         stock_code (str): 종목 코드
