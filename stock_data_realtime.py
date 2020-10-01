@@ -154,7 +154,7 @@ class StockRtEvent:
             rt_data = {
                 "stock_code": self.client.get_header_value(0),  # 종목 코드
                 "date_time": self.client.get_header_value(18),  # 시분초
-                "e_single_price_flag": SINGLE_PRICE_FLAG(self.client.get_header_value(20)).name,  # 예상 체결가 구분 플래그 (동시호가 / 장중)
+                "e_single_price_flag": SINGLE_PRICE_FLAG(self.client.get_header_value(20)),  # 예상 체결가 구분 플래그 (동시호가 / 장중)
                 "price": self.client.get_header_value(13),  # 현재가
                 "day_changed": self.client.get_header_value(2),  # 대비
                 "qty": self.client.get_header_value(17),  # 순간체결수량

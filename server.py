@@ -191,27 +191,13 @@ class TaskTradeStatusRt(threading.Thread):
             }
             self.caller.task_list["stock_tick_rt_sub"].insert_q(req)
 
-        data_json = {
-            "res_type": "trade_status",
-            "res_data": {
-                "date_time": trade_info.date_time,
-                "stock_name": trade_info.stock_name,
-                "qty": trade_info.qty,
-                "price": trade_info.price,
-                "order_num": trade_info.order_num,
-                "origin_order_num": trade_info.origin_order_num,
-                "stock_code": trade_info.stock_code,
-                "e_order_type": trade_info.e_order_type.name,
-                "e_conclusion_type": trade_info.e_conclusion_type.name,
-                "e_modify_cancel_type": trade_info.e_modify_cancel_type.name,
-                "e_price_type": trade_info.e_price_type.name,
-                "e_order_condition": trade_info.e_order_condition.name,
-                "avg_price": trade_info.avg_price,
-                "able_sell_qty": trade_info.able_sell_qty,
-                "balance_qty": trade_info.balance_qty,
-                "total_price": trade_info.total_price,
-            },
-        }
+        trade_info["e_order_type"] = trade_info["e_order_type"].name
+        trade_info["e_conclusion_type"] = trade_info["e_conclusion_type"].name
+        trade_info["e_modify_cancel_type"] = trade_info["e_modify_cancel_type"].name
+        trade_info["e_price_type"] = trade_info["e_price_type"].name
+        trade_info["e_order_condition"] = trade_info["e_order_condition"].name
+
+        data_json = {"res_type": "trade_status", "res_data": trade_info}
 
         for username in self.sub_status_dict.keys():
             self.caller.insert_send_q(username, json.dumps(data_json))
@@ -266,6 +252,9 @@ class TaskStockDataRt(threading.Thread):
         self.subscribe_req_q.put(data)
 
     def event(self, stock_rt_data):
+        if self.res_type == "stock_tick_rt_data":
+            stock_rt_data["e_single_price_flag"] = stock_rt_data["e_single_price_flag"].name
+
         data_json = {"res_type": self.res_type, "res_data": stock_rt_data}
         if stock_rt_data["stock_code"] in self.sub_status_dict:
             for username in self.sub_status_dict[stock_rt_data["stock_code"]]["user_list"]:
