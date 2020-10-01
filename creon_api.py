@@ -380,6 +380,15 @@ class CreonStockCur(CreonDataComm):
         CreonDataComm.__init__(self, "Dscbo1.StockCur", LIMIT_TYPE.NONTRADE_REQUEST)
 
 
+class CreonStockJpBid(CreonDataComm):
+    """
+    실시간 10차 호가 데이터 관련 클래스
+    """
+
+    def __init__(self):
+        CreonDataComm.__init__(self, "Dscbo1.StockJpBid", LIMIT_TYPE.NONTRADE_REQUEST)
+
+
 class CreonStockOrder:
     """
     주식 주문 관련 클래스
