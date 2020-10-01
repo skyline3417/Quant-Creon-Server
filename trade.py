@@ -13,30 +13,6 @@ TRADE_FEE_PERCENT = 0.011360
 SELL_TAX_PERCENT = 0.25
 
 
-@dataclass
-class TradeInfo:
-    """
-    거래 정보 저장용 데이터 클래스
-    """
-
-    date_time: int  # 날짜 시간 YYYYMMDDHHmmSS
-    stock_name: str  # 주식이름
-    qty: int  # 수량
-    price: int  # (접수된 or 체결된) 가격
-    order_num: int  # 주문 번호
-    origin_order_num: int  # 원 주문번호
-    stock_code: str  # 종목 코드
-    e_order_type: ORDER_TYPE  # 주문 타입 (매수, 매도)
-    e_conclusion_type: CONCLUSION_TYPE  # 체결 타입 (체결, 확인, 거부, 접수)
-    e_modify_cancel_type: MODIFY_CANCEL_TYPE  # 정정 취소 타입
-    e_price_type: PRICE_TYPE  # 호가 타입 (일반, 시장가)
-    e_order_condition: ORDER_CONDITION  # 주문 조건 (IOC, FOK)
-    avg_price: int  # 평균단가
-    able_sell_qty: int  # 매도 가능 수량
-    balance_qty: int  # 체결 기준 수량
-    total_price: int  # 총 거래 금액
-
-
 class Order:
     """
     주식 주문 관련 클래스
@@ -255,25 +231,25 @@ class TradeData:
         거래 기록 (주문/체결) db에 저장
 
         Parameters:
-            trade_info (TradeInfo): 주식 주문 체결 데이터 클래스 인스턴스 (구조체)
+            trade_info (dict): 주식 주문 체결 데이터
         """
         trade_info_db = {
-            "date_time": trade_info.date_time,
-            "order_number": trade_info.order_num,
-            "conclusion_type": trade_info.e_conclusion_type.name,
-            "order_type": trade_info.e_order_type.name,
-            "modify_cancel_type": trade_info.e_modify_cancel_type.name,
-            "origin_order_number": trade_info.origin_order_num,
-            "stock_code": trade_info.stock_code,
-            "stock_name": trade_info.stock_name,
-            "quantity": trade_info.qty,
-            "price_type": trade_info.e_price_type.name,
-            "order_condition": trade_info.e_order_condition.name,
-            "price": trade_info.price,
-            "total_price": trade_info.total_price,
-            "average_price": trade_info.avg_price,
-            "able_sell_quantity": trade_info.able_sell_qty,
-            "balance_quantity": trade_info.balance_qty,
+            "date_time": trade_info["date_time"],
+            "order_number": trade_info["order_num"],
+            "conclusion_type": trade_info["e_conclusion_type"].name,
+            "order_type": trade_info["e_order_type"].name,
+            "modify_cancel_type": trade_info["e_modify_cancel_type"].name,
+            "origin_order_number": trade_info["origin_order_num"],
+            "stock_code": trade_info["stock_code"],
+            "stock_name": trade_info["stock_name"],
+            "quantity": trade_info["qty"],
+            "price_type": trade_info["e_price_type"].name,
+            "order_condition": trade_info["e_order_condition"].name,
+            "price": trade_info["price"],
+            "total_price": trade_info["total_price"],
+            "average_price": trade_info["avg_price"],
+            "able_sell_quantity": trade_info["able_sell_qty"],
+            "balance_quantity": trade_info["balance_qty"],
         }
 
         columns_db = []
@@ -321,19 +297,19 @@ class TradeData:
         미체결 주문 목록 db에 미체결 주문 추가
 
         Parameters:
-            trade_info (TradeInfo): 주식 주문 체결 데이터 클래스 인스턴스 (구조체)
+            trade_info (dict): 주식 주문 체결 데이터
         """
         # 미체결 데이터 및 컬럼
         unconcluded_order_db = {
-            "date_time": trade_info.date_time,
-            "order_number": trade_info.order_num,
-            "order_type": trade_info.e_order_type.name,
-            "stock_code": trade_info.stock_code,
-            "stock_name": trade_info.stock_name,
-            "quantity": trade_info.qty,
-            "price_type": trade_info.e_price_type.name,
-            "order_condition": trade_info.e_order_condition.name,
-            "price": trade_info.price,
+            "date_time": trade_info["date_time"],
+            "order_number": trade_info["order_num"],
+            "order_type": trade_info["e_order_type"].name,
+            "stock_code": trade_info["stock_code"],
+            "stock_name": trade_info["stock_name"],
+            "quantity": trade_info["qty"],
+            "price_type": trade_info["e_price_type"].name,
+            "order_condition": trade_info["e_order_condition"].name,
+            "price": trade_info["price"],
         }
         columns_db = []
         data_db = []
