@@ -18,7 +18,12 @@ PORT = 30565
 class QuantServer:
     def __init__(self):
         self.client_conn_dict = {}
-        self.task_list = {"order": TaskOrder(self), "stock_tick_rt_sub": TaskStockTickRt(self), "trade_status_rt_sub": TaskTradeStatusRt(self)}
+        self.task_list = {
+            "trade_status_rt_sub": TaskTradeStatusRt(self),
+            "order": TaskOrder(self),
+            "stock_tick_rt_sub": TaskStockTickRt(self),
+            "stock_askbid_rt_sub": TaskStockAskBidRt(self),
+        }
 
     def start_server(self):
         trade.BalanceData.update_stock_balance()
