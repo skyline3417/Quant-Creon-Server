@@ -7,7 +7,7 @@ import json
 import stock_data
 import trade
 import database
-from stock_data_realtime import StockTickData, StockTickRt
+from stock_data_realtime import StockTickRt, StockAskBidRt
 from trade_status_realtime import TradeStatusRt
 from trade_info_enum import *
 
@@ -223,8 +223,9 @@ class TaskTradeStatusRt(threading.Thread):
 
 
 class TaskStockDataRt(threading.Thread):
-    def __init__(self, rt_class, caller):
+    def __init__(self, res_type, rt_class, caller):
         threading.Thread.__init__(self)
+        self.res_type = res_type
         self.rt_class = rt_class
         self.caller = caller
 
@@ -264,8 +265,11 @@ class TaskStockDataRt(threading.Thread):
     def insert_q(self, data):
         self.subscribe_req_q.put(data)
 
-    def event(self):
-        pass
+    def event(self, stock_rt_data):
+        data_json = {"res_type": self.res_type, "res_data": stock_rt_data}
+        if stock_rt_data["stock_code"] in self.sub_status_dict:
+            for username in self.sub_status_dict[stock_rt_data["stock_code"]]["user_list"]:
+                self.caller.insert_send_q(username, json.dumps(data_json))
 
     def delete_user(self, username):
         for stock_code in self.sub_status_dict.keys():
@@ -279,48 +283,12 @@ class TaskStockDataRt(threading.Thread):
 
 class TaskStockTickRt(TaskStockDataRt):
     def __init__(self, caller):
-        TaskStockDataRt.__init__(self, StockTickRt, caller)
-
-    def event(self, stock_tick_data):
-        data_json = {
-            "res_type": "trade_status_rt",
-            "res_data": {
-                "stock_code": stock_tick_data.stock_code,
-                "date_time": stock_tick_data.date_time,
-                "single_price_flag": stock_tick_data.single_price_flag.name,
-                "price": stock_tick_data.price,
-                "day_changed": stock_tick_data.day_changed,
-                "qty": stock_tick_data.qty,
-                "vol": stock_tick_data.vol,
-            },
-        }
-        if stock_tick_data.stock_code in self.sub_status_dict:
-            for username in self.sub_status_dict[stock_tick_data.stock_code]["user_list"]:
-                self.caller.insert_send_q(username, json.dumps(data_json))
+        TaskStockDataRt.__init__(self, "stock_tick_rt_data", StockTickRt, caller)
 
 
-"""
 class TaskStockAskBidRt(TaskStockDataRt):
     def __init__(self, caller):
-        TaskStockDataRt.__init__(self, StockAskBidRt, caller)
-
-    def event(self, stock_tick_data):
-        data_json = {
-            "res_type": "trade_status_rt",
-            "res_data": {
-                "stock_code": stock_tick_data.stock_code,
-                "date_time": stock_tick_data.date_time,
-                "single_price_flag": stock_tick_data.single_price_flag.name,
-                "price": stock_tick_data.price,
-                "day_changed": stock_tick_data.day_changed,
-                "qty": stock_tick_data.qty,
-                "vol": stock_tick_data.vol,
-            },
-        }
-        if stock_tick_data.stock_code in self.sub_status_dict:
-            for username in self.sub_status_dict[stock_tick_data.stock_code]["user_list"]:
-                self.caller.insert_send_q(username, json.dumps(data_json))
-"""
+        TaskStockDataRt.__init__(self, "stock_askbid_rt_data", StockAskBidRt, caller)
 
 
 class TaskOrder(threading.Thread):
