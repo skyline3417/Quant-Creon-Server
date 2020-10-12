@@ -166,33 +166,37 @@ class TaskTradeStatusRt(threading.Thread):
 
         self.caller = caller
 
-        self.subscribe_req_q = Queue()
-        self.sub_status_dict = {}
+        self.trade_status_rt = TradeStatusRt(self.event)
+
+        self.sub_req_q = Queue()
+        self.sub_username_list = []
 
         self.setDaemon(True)
         self.start()
 
     def run(self):
+        self.trade_status_rt.subscribe()
+
         while True:
-            req = self.subscribe_req_q.get()
+            req = self.sub_req_q.get()
 
             username = req["username"]
             sub_req = req["req_data"]
 
             if sub_req["set_status"]:
-                if not username in self.sub_status_dict:
-                    self.sub_status_dict[username] = TradeStatusRt(self.event)
+                if not username in self.sub_username_list:
+                    self.sub_username_list.append(username)
             else:
-                if username in self.sub_status_dict:
-                    self.sub_status_dict[username].unsubscribe()
-                    del self.sub_status_dict[username]
+                if username in self.sub_username_list:
+                    self.sub_username_list.remove(username)
 
     def event(self, trade_info):
-        if trade_info.e_conclusion_type == CONCLUSION_TYPE.CONCLUDED:
+        print("event!!!!")
+        if trade_info["e_conclusion_type"] == CONCLUSION_TYPE.CONCLUDED:
             req = {
                 "username": "system",
                 "req_type": "stock_data_rt",
-                "req_data": {"set_status": bool(trade_info.balance_qty), "stock_code_list": [trade_info.stock_code]},
+                "req_data": {"set_status": bool(trade_info["balance_qty"]), "stock_code_list": [trade_info["stock_code"]]},
             }
             self.caller.task_list["stock_tick_rt_sub"].insert_q(req)
 
@@ -204,13 +208,15 @@ class TaskTradeStatusRt(threading.Thread):
 
         data_json = {"res_type": "trade_status", "res_data": trade_info}
 
-        for username in self.sub_status_dict.keys():
+        for username in self.sub_username_list:
             self.caller.insert_send_q(username, json.dumps(data_json))
 
     def delete_user(self, username):
-        if username in self.sub_status_dict:
-            self.sub_status_dict[username].unsubscribe()
-            del self.sub_status_dict[username]
+        if username in self.sub_username_list:
+            self.sub_username_list.remove(username)
+
+    def insert_q(self, data):
+        self.sub_req_q.put(data)
 
 
 class TaskStockDataRt(threading.Thread):
@@ -220,7 +226,7 @@ class TaskStockDataRt(threading.Thread):
         self.rt_class = rt_class
         self.caller = caller
 
-        self.subscribe_req_q = Queue()
+        self.sub_req_q = Queue()
         self.sub_status_dict = {}
 
         self.setDaemon(True)
@@ -228,7 +234,7 @@ class TaskStockDataRt(threading.Thread):
 
     def run(self):
         while True:
-            req = self.subscribe_req_q.get()
+            req = self.sub_req_q.get()
 
             username = req["username"]
             sub_req = req["req_data"]
@@ -254,11 +260,11 @@ class TaskStockDataRt(threading.Thread):
             print(self.sub_status_dict)
 
     def insert_q(self, data):
-        self.subscribe_req_q.put(data)
+        self.sub_req_q.put(data)
 
     def event(self, stock_rt_data):
         if self.res_type == "stock_tick_rt_data":
-            stock_rt_data["e_single_price_flag"] = stock_rt_data["e_single_price_flag"].name
+            stock_rt_data["e_market_hours_kind"] = stock_rt_data["e_market_hours_kind"].name
 
         data_json = {"res_type": self.res_type, "res_data": stock_rt_data}
         if stock_rt_data["stock_code"] in self.sub_status_dict:

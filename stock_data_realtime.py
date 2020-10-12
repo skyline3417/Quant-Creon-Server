@@ -10,7 +10,7 @@ from trade import BalanceData
 _STOCK_RT_DATA_COLUMNS = (
     "id",
     "time",
-    "single_price_flag",
+    "market_hours_kind",
     "price",
     "dchange",
     "quantity",
@@ -20,7 +20,7 @@ _STOCK_RT_DATA_COLUMNS = (
 _STOCK_RT_DATA_TYPES = (
     "BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY",
     "INT",
-    "ENUM('SINGLE_PRICE','NORMAL')",
+    "ENUM('PRE_EXPECTED','REGULAR','AFTER','AFTER_EXPECTED')",
     "INT",
     "INT",
     "INT",
@@ -28,13 +28,15 @@ _STOCK_RT_DATA_TYPES = (
 )
 
 
-class SINGLE_PRICE_FLAG(enum.Enum):
+class MARKET_HOURS_KIND(enum.Enum):
     """
-    예상 체결가 구분 플래그
+    시장 시간 구분 플래그
     """
 
-    SINGLE_PRICE = ord("1")  # 동시호가
-    NORMAL = ord("2")  # 장중
+    PRE_EXPECTED = ord("1")  # 장전 예상 체결
+    REGULAR = ord("2")  # 장중
+    AFTER = ord("4")  # 장후 시간외
+    AFTER_EXPECTED = ord("5")  # 장후 예상 체결
 
 
 class StockTickRt:
@@ -154,7 +156,7 @@ class StockRtEvent:
             rt_data = {
                 "stock_code": self.client.get_header_value(0),  # 종목 코드
                 "date_time": self.client.get_header_value(18),  # 시분초
-                "e_single_price_flag": SINGLE_PRICE_FLAG(self.client.get_header_value(20)),  # 예상 체결가 구분 플래그 (동시호가 / 장중)
+                "e_market_hours_kind": MARKET_HOURS_KIND(self.client.get_header_value(20)),  # 예상 체결가 구분 플래그 (동시호가 / 장중)
                 "price": self.client.get_header_value(13),  # 현재가
                 "day_changed": self.client.get_header_value(2),  # 대비
                 "qty": self.client.get_header_value(17),  # 순간체결수량
@@ -163,7 +165,7 @@ class StockRtEvent:
 
             data_db = [
                 rt_data["date_time"],
-                rt_data["single_price_flag"],
+                rt_data["e_market_hours_kind"].name,
                 rt_data["price"],
                 rt_data["day_changed"],
                 rt_data["qty"],
@@ -186,13 +188,13 @@ class StockRtEvent:
             }
             data_index = [3, 7, 11, 15, 19, 27, 31, 35, 39, 43]
             for idx in range(10):
-                rt_data["ask"][idx] = self.client.GetHeaderValue(data_index[idx])
-                rt_data["bid"][idx] = self.client.GetHeaderValue(data_index[idx] + 1)
-                rt_data["ask_vol"][idx] = self.client.GetHeaderValue(data_index[idx] + 2)
-                rt_data["bid_vol"][idx] = self.client.GetHeaderValue(data_index[idx] + 3)
+                rt_data["ask"][idx] = self.client.get_header_value(data_index[idx])
+                rt_data["bid"][idx] = self.client.get_header_value(data_index[idx] + 1)
+                rt_data["ask_vol"][idx] = self.client.get_header_value(data_index[idx] + 2)
+                rt_data["bid_vol"][idx] = self.client.get_header_value(data_index[idx] + 3)
 
-            rt_data["tot_ask"] = self.client.GetHeaderValue(23)
-            rt_data["tot_bid"] = self.client.GetHeaderValue(24)
+            rt_data["tot_ask"] = self.client.get_header_value(23)
+            rt_data["tot_bid"] = self.client.get_header_value(24)
 
         if self.method:
             self.method(rt_data)

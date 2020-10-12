@@ -1,7 +1,7 @@
 # coding=utf-8
 import utils
 from creon_api import CreonCpConclusion
-from trade import TradeInfo, TradeData, BalanceData
+from trade import TradeData, BalanceData
 from database import MariaDB
 
 from trade_info_enum import ORDER_TYPE, CONCLUSION_TYPE, MODIFY_CANCEL_TYPE, PRICE_TYPE, ORDER_CONDITION
@@ -88,7 +88,7 @@ class TradeStatusRtEvent:
                 "KR_Unconcluded_Order", "quantity", "order_number = " + str(trade_info["origin_order_num"])
             )
 
-        trade_info.total_price = trade_info["price"] * trade_info["qty"]  # 거래 금액 # TODO : 거래 수수료 및 세금 계산 필요
+        trade_info["total_price"] = trade_info["price"] * trade_info["qty"]  # 거래 금액 # TODO : 거래 수수료 및 세금 계산 필요
 
         TradeData.add_trade_history(trade_info)  # 주문 / 체결 정보 업데이트
 

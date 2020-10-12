@@ -260,7 +260,7 @@ class TradeData:
             data_db.append(value)
 
         # 거래 정보가 체결 데이터일 경우 체결 기록 db에 추가
-        if trade_info.e_conclusion_type == CONCLUSION_TYPE.CONCLUDED:
+        if trade_info["e_conclusion_type"] == CONCLUSION_TYPE.CONCLUDED:
             cls.db_kr_operation_data.insert("KR_Conclusion_History", columns_db, data_db)
         # 거래 정보가 주문 데이터일 경우 주문 기록 db에 추가
         else:
@@ -280,6 +280,7 @@ class TradeData:
         all_rcv_data_db = creon_unconcluded.get_data_list([1, 13, 3, 4, 11, 21, 7], 500, 5)
 
         if not all_rcv_data_db:
+            cls.db_kr_operation_data.delete("KR_Unconcluded_Order")
             return
 
         # 가져온 데이터 수정 (주문 타입(매수/매도) 열거형 이름으로)
@@ -374,6 +375,7 @@ class BalanceData:
         all_rcv_data_db = creon_balance.get_data_list([12, 0, 17, 18, 7, 15, 10, 11, 9], 500, 7)
 
         if not all_rcv_data_db:
+            cls.db_kr_operation_data.delete("KR_Stock_Balance")
             return
 
         for rcv_row in all_rcv_data_db:
