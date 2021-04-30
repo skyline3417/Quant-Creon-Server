@@ -1,11 +1,11 @@
 # coding=utf-8
 import pymysql
 
-MARIA_DB_HOST = "skyline3056.synology.me"
-MARIA_DB_PORT = 3307
-MARIA_DB_USER = "system"
-MARIA_DB_PASSWORD = "fucvax-1pipVo-cuxrof"
-MARIA_DB_CHARSET = "utf8"
+MARIA_DB_HOST = ""
+MARIA_DB_PORT = 
+MARIA_DB_USER = ""
+MARIA_DB_PASSWORD = ""
+MARIA_DB_CHARSET = ""
 
 
 class MariaDB:
